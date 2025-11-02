@@ -1,35 +1,18 @@
 const express = require("express");
 const multer = require("multer");
 const cors = require("cors");
-
-// ✅ محاولة آمنة لتحميل pdf-parse بغض النظر عن طريقة التصدير
-let pdfParse;
-try {
-  pdfParse = require("pdf-parse");
-  if (typeof pdfParse !== "function" && typeof pdfParse.default === "function") {
-    pdfParse = pdfParse.default;
-  }
-} catch (err) {
-  console.error("❌ فشل تحميل pdf-parse:", err);
-}
-
-const { translate } = require("@vitalets/google-translate-api");
+const pdfParse = require("pdf-parse");
+const translate = require("@iamtraction/google-translate");
 
 const app = express();
 const upload = multer();
 
-app.use(
-  cors({
-    origin: "http://localhost:3000",
-    methods: ["POST", "GET"],
-  })
-);
+app.use(cors({ origin: "https://z-translator.vercel.app", methods: ["POST", "GET"] }));
 
 app.post("/translate", upload.single("file"), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: "No file uploaded" });
 
-    // ✅ الآن pdfParse مضمونة أنها Function
     const data = await pdfParse(req.file.buffer);
     const text = data.text;
 
@@ -40,33 +23,31 @@ app.post("/translate", upload.single("file"), async (req, res) => {
           .filter((w) => /^[A-Za-z]+$/.test(w))
           .map((w) => w.toLowerCase())
       )
-    ).slice(0, 100);
+    ).slice(0, 5000);
 
     const translations = [];
+    const batchSize = 50;
 
-    // ترجمة على دفعات 50 كلمة في المرة
-const batchSize = 50;
+    for (let i = 0; i < words.length; i += batchSize) {
+      const batch = words.slice(i, i + batchSize);
 
-for (let i = 0; i < words.length; i += batchSize) {
-  const batch = words.slice(i, i + batchSize);
+      const batchResults = await Promise.all(
+        batch.map(async (word) => {
+          try {
+            const result = await translate(word, { to: "ar" });
+            return { word, translation: result.text };
+          } catch (err) {
+            console.error(`❌ Error translating "${word}":`, err.message);
+            return { word, translation: "❌ فشل الترجمة" };
+          }
+        })
+      );
 
-  // ترجمة كل كلمة في الدفعة بالتوازي
-  const batchResults = await Promise.all(
-    batch.map(async (word) => {
-      try {
-        const { text: arabic } = await translate(word, { to: "ar" });
-        return { word, translation: arabic };
-      } catch {
-        return { word, translation: "❌ فشل الترجمة" };
-      }
-    })
-  );
+      translations.push(...batchResults);
 
-  translations.push(...batchResults);
-
-  // انتظار نصف ثانية قبل الدفعة التالية (لتفادي الحظر)
-  await new Promise((res) => setTimeout(res, 500));
-}
+      await new Promise((res) => setTimeout(res, 500));
+      console.log(`✅ Translated ${Math.min(i + batchSize, words.length)}/${words.length} words`);
+    }
 
     res.json({ words: translations });
   } catch (err) {
