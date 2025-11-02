@@ -23,7 +23,7 @@ app.post("/translate", upload.single("file"), async (req, res) => {
           .filter((w) => /^[A-Za-z]+$/.test(w))
           .map((w) => w.toLowerCase())
       )
-    ).slice(0, 5000);
+    );
 
     const translations = [];
     const batchSize = 50;
@@ -46,7 +46,7 @@ app.post("/translate", upload.single("file"), async (req, res) => {
       translations.push(...batchResults);
 
       await new Promise((res) => setTimeout(res, 500));
-      console.log(`✅ Translated ${Math.min(i + batchSize, words.length)}/${words.length} words`);
+      console.log(` Translated ${Math.min(i + batchSize, words.length)}/${words.length} words`);
     }
 
     res.json({ words: translations });
